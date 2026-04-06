@@ -127,9 +127,12 @@ def blocks_to_markdown(blocks: list[ContentBlock], title: str = "") -> str:
 
 
 def generate_filename(page: PageContent) -> str:
-    """Generate the markdown filename from chapter number and title."""
-    # Format: "01. Title Here.md"
-    num = f"{page.chapter_number:02d}"
+    """Generate the markdown filename from chapter number and title.
+
+    Handles both int chapter numbers (OOD course: 1 → "01") and
+    string chapter numbers (Coding Patterns course: "01-00" → "01-00").
+    """
+    num = str(page.chapter_number) if isinstance(page.chapter_number, str) else f"{page.chapter_number:02d}"
     title = _sanitize_filename(page.title)
     return f"{num}. {title}.md"
 

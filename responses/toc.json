@@ -1,0 +1,131 @@
+[
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "what-is-an-object-oriented-design-interview"
+    ],
+    "id": "what-is-an-object-oriented-design-interview",
+    "chapter": 1,
+    "free": true,
+    "title": "What is an Object-Oriented Design Interview"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "a-framework-for-the-ood-interview"
+    ],
+    "id": "a-framework-for-the-ood-interview",
+    "chapter": 2,
+    "free": true,
+    "title": "A Framework for the OOD Interview"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "oop-fundamentals"
+    ],
+    "id": "oop-fundamentals",
+    "chapter": 3,
+    "title": "OOP Fundamentals"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-parking-lot"
+    ],
+    "id": "design-a-parking-lot",
+    "chapter": 4,
+    "free": true,
+    "title": "Design a Parking Lot"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "movie-ticket-booking-system"
+    ],
+    "id": "movie-ticket-booking-system",
+    "chapter": 5,
+    "title": "Design a Movie Ticket Booking System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-unix-file-search"
+    ],
+    "id": "design-a-unix-file-search",
+    "chapter": 6,
+    "title": "Design a Unix File Search System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-vending-machine"
+    ],
+    "id": "design-a-vending-machine",
+    "chapter": 7,
+    "title": "Design a Vending Machine"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-an-elevator-system"
+    ],
+    "id": "design-an-elevator-system",
+    "chapter": 8,
+    "title": "Design an Elevator System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "grocery-store-system"
+    ],
+    "id": "grocery-store-system",
+    "chapter": 9,
+    "title": "Design a Grocery Store System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-tic-tac-toe-game"
+    ],
+    "id": "design-a-tic-tac-toe-game",
+    "chapter": 10,
+    "title": "Design a Tic Tac Toe Game"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-blackjack-game"
+    ],
+    "id": "design-a-blackjack-game",
+    "chapter": 11,
+    "title": "Design a Blackjack Game"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-shipping-locker"
+    ],
+    "id": "design-a-shipping-locker",
+    "chapter": 12,
+    "title": "Design a Shipping Locker System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-an-automated-teller-machine-atm"
+    ],
+    "id": "design-an-automated-teller-machine-atm",
+    "chapter": 13,
+    "title": "Design an ATM System"
+  },
+  {
+    "course": "object-oriented-design-interview",
+    "slug": [
+      "design-a-restaurant-management-system"
+    ],
+    "id": "design-a-restaurant-management-system",
+    "chapter": 14,
+    "title": "Design a Restaurant Management System"
+  }
+]

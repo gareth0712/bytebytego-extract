@@ -1,0 +1,155 @@
+{
+  "course": "object-oriented-design-interview",
+  "id": "what-is-an-object-oriented-design-interview",
+  "chapter": 1,
+  "title": "What is an Object-Oriented Design Interview",
+  "free": true,
+  "code": "var Component=(()=>{var p=Object.create;var r=Object.defineProperty;var Z=Object.getOwnPropertyDescriptor;var u=Object.getOwnPropertyNames;var g=Object.getPrototypeOf,w=Object.prototype.hasOwnProperty;var k=(t,C)=>()=>(C||t((C={exports:{}}).exports,C),C.exports),m=(t,C)=>{for(var i in C)r(t,i,{get:C[i],enumerable:!0})},L=(t,C,i,n)=>{if(C&&typeof C==\"object\"||typeof C==\"function\")for(let o of u(C))!w.call(t,o)&&o!==i&&r(t,o,{get:()=>C[o],enumerable:!(n=Z(C,o))||n.enumerable});return t};var f=(t,C,i)=>(i=t!=null?p(g(t)):{},L(C||!t||!t.__esModule?r(i,\"default\",{value:t,enumerable:!0}):i,t)),b=t=>L(r({},\"__esModule\",{value:!0}),t);var a=k((H,s)=>{s.exports=_jsx_runtime});var O={};m(O,{default:()=>M,frontmatter:()=>v});var e=f(a());var l=\"/images/courses/object-oriented-design-interview/what-is-an-object-oriented-design-interview/image-1-1-AFIBSFEU.svg\";var c=\"/images/courses/object-oriented-design-interview/what-is-an-object-oriented-design-interview/image-1-2-4XTE4MPH.svg\";var v={chapter:1,free:!0,title:\"What is an Object-Oriented Design Interview\"};function d(t){let C={a:\"a\",h2:\"h2\",p:\"p\",strong:\"strong\",...t.components},{Figure:i,Image:n}=C;return i||h(\"Figure\",!0),n||h(\"Image\",!0),(0,e.jsxs)(e.Fragment,{children:[(0,e.jsx)(C.p,{children:\"Object-oriented design interviews have become increasingly popular in technical hiring. This shift reflects companies\\u2019 growing emphasis on skills that align with real-world software development. OOD interviews are important at companies like Amazon, Bloomberg, and Uber, serving as a practical coding exercise. These interviews test your ability to build logical, maintainable systems and gauge how effectively you apply object-oriented design principles and patterns.\"}),`\n`,(0,e.jsx)(C.p,{children:\"Unlike algorithm interviews, which demand a single, optimal solution, OOD interviews leave space for creativity. There\\u2019s no one-size-fits-all answer, as various approaches can produce a coherent and working design. For example, some questions focus on real-world systems like a Parking Lot or a Vending Machine, while others take a more abstract turn, such as a Unix File Search or a Tic-Tac-Toe game. Each question presents unique challenges to test your skills, but they all build on the same basic knowledge and follow a similar interview structure.\"}),`\n`,(0,e.jsx)(i,{children:(0,e.jsx)(n,{src:l,alt:\"Image represents a whiteboard on a tripod stand with three rectangular buttons stacked vertically.  Each button contains a design prompt: 'Design a Parking Lot,' 'Design a Vending Machine,' and 'Design Tic-Tac-Toe Game.' A simple cartoon drawing of a girl with black hair, wearing a white shirt and grey pants, stands to the right of the whiteboard, pointing with a stick at the bottom button, 'Design Tic-Tac-Toe Game,' suggesting a focus or selection of this particular design challenge.  There is no explicit information flow depicted; the image simply presents the design prompts and a person seemingly choosing one. The overall style is minimalist and cartoonish.\",width:\"624\",height:\"409\"})}),`\n`,(0,e.jsx)(C.h2,{id:\"how-is-this-book-structured\",children:\"How Is This Book Structured?\"}),`\n`,(0,e.jsx)(C.p,{children:\"This brief chapter explains what OOD interview questions are. Next, we\\u2019ll present a framework for approaching OOD interviews and guide you through a complete end-to-end example. Then, we\\u2019ll cover common design principles and patterns used in OOD. After that, the rest of the book focuses on typical case study questions, tackling them one at a time.\"}),`\n`,(0,e.jsx)(C.h2,{id:\"why-do-companies-use-ood-interviews\",children:\"Why Do Companies Use OOD Interviews?\"}),`\n`,(0,e.jsx)(C.p,{children:\"Companies use OOD interviews to hire skilled developers who can write effective code fast. They look for candidates who can define the problem scope, clarify requirements and edge cases, create practical, low-level designs, and build software that is easy to understand, maintain, and extend.\"}),`\n`,(0,e.jsx)(C.p,{children:\"OOD interviews, along with System Design and Behavioral Questions, help companies decide a candidate\\u2019s level. Doing well in OOD often sets intermediate and senior engineers apart by showing deeper design skills.\"}),`\n`,(0,e.jsx)(C.p,{children:\"Here\\u2019s what interviewers are typically looking for:\"}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Product Sense:\"}),\" Translate real-world needs into software by applying domain knowledge and making user-centered decisions.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Systems Thinking:\"}),\" Break down a complex system into subsystems and components. Set clear roles for each and define how they work together.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Decision Making:\"}),\" See beyond immediate requirements, anticipate future needs, and design with flexibility in mind. Strike the right balance between making designs too complicated and keeping them too basic.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Code Quality:\"}),\" Write clean, logical, and maintainable code to implement your design. That\\u2019s why modern OOD questions focus on coding, not just diagrams.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"OOP Knowledge:\"}),\" Use object-oriented techniques, SOLID principles, and design patterns to make software simple and production-ready.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Communication:\"}),\" Ask clear questions, guide the discussion, explain your ideas well, and stand by your solutions confidently.\"]}),`\n`,(0,e.jsx)(C.h2,{id:\"how-are-ood-interviews-different-from-coding-interviews\",children:\"How Are OOD Interviews Different From Coding Interviews?\"}),`\n`,(0,e.jsx)(C.p,{children:\"OOD interviews and algorithm coding interviews both involve writing code, but they focus on different goals. If you\\u2019re familiar with algorithm interviews, you\\u2019ll need to shift your mindset for OOD. Here\\u2019s how they differ:\"}),`\n`,(0,e.jsx)(C.p,{children:(0,e.jsx)(C.strong,{children:\"Focus on quality, not speed\"})}),`\n`,(0,e.jsx)(C.p,{children:\"Algorithm interviews want the fastest solution, focusing on time and space efficiency. OOD interviews value clean, maintainable software. You\\u2019ll use objects and create well-structured code with abstractions and decomposing logic, even if it takes a bit longer, which is fine in OOD interviews. Write clear, organized code with intuitive names so your ideas stand out without extra explanation.\"}),`\n`,(0,e.jsx)(C.p,{children:(0,e.jsx)(C.strong,{children:\"Design with objects, not steps\"})}),`\n`,(0,e.jsx)(C.p,{children:\"Algorithm interviews often push you to solve problems fast, so you might write all the logic in one function. OOD interviews, on the other hand, focus on objects, what they are, what they do, and how they interact with each other. Instead of listing steps, think about each object\\u2019s role and relationships.\"}),`\n`,(0,e.jsx)(C.p,{children:(0,e.jsx)(C.strong,{children:\"Demonstrate OOP skills, not just answers\"})}),`\n`,(0,e.jsx)(C.p,{children:\"In algorithm interviews, solving the problem matters most. OOD interviews also test your OOP skills. Use ideas like encapsulation, inheritance, and design patterns to build your solution. Demonstrating a strong grasp of SOLID principles shows that you can design clean, maintainable systems. They value your thinking process, not just the result.\"}),`\n`,(0,e.jsx)(C.p,{children:(0,e.jsx)(C.strong,{children:\"Plan extensible designs, not short-term fixes\"})}),`\n`,(0,e.jsx)(C.p,{children:\"Algorithm interviews keep you racing against the clock, leaving little time to plan for future changes. In OOD interviews, the best solution often requires less coding, and the pacing gives you time to discuss how your solution scales to future requirements. A good design adapts to updates with minimal rework.\"}),`\n`,(0,e.jsx)(C.h2,{id:\"how-to-prepare-for-an-ood-interview\",children:\"How To Prepare For An OOD Interview?\"}),`\n`,(0,e.jsx)(C.p,{children:\"This book helps you prepare with the most up-to-date view on OOD interviews. It covers the basics, a complete walkthrough, and examples of common OOD problems with solutions. You can also try other resources to build your skills.\"}),`\n`,(0,e.jsx)(C.p,{children:\"Here are a few ways to prepare:\"}),`\n`,(0,e.jsx)(i,{children:(0,e.jsx)(n,{src:c,alt:\"Image represents a simple cartoon depicting a person's preparation for an object-oriented design interview.  A stick figure person is shown sitting and reading an open book titled 'ByteByteCode'.  Three speech bubbles emanate from the figure's head, indicating three key aspects of their preparation.  The leftmost speech bubble says 'Learn OOP fundamentals,' highlighting the importance of understanding object-oriented programming basics.  Above the figure's head, a speech bubble reads 'Practice high-frequency problems,' emphasizing the need to solve common coding challenges.  Finally, the rightmost speech bubble states 'Mock interview and practice communication,' underscoring the significance of practicing interview techniques and communication skills. The overall arrangement suggests that a combination of theoretical knowledge, practical problem-solving, and communication skills are crucial for success in the interview.\",width:\"624\",height:\"409\"})}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Learn OOP fundamentals:\"}),\" Read articles, tutorials, or books on OOP. This strengthens your interview skills and your job performance later. Start with simple ideas like encapsulation, inheritance, polymorphism, and abstraction. Then, explore SOLID principles and design patterns using online guides.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Practice high-frequency problems:\"}),\" This book includes examples of typical OOD problems. Some, like Parking Lot, show how to model real-world systems. Others, like Elevator System, test complex logic, or like Linux File Search, check your abstraction skills. Code along with us, then try solving them on your own and review your work.\"]}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"Mock interview and practice communication:\"}),\" OOD interviews value clear communication, not just coding. Our walkthrough chapter offers tips on key topics, but practice explaining your designs out loud. Work with a friend in a mock interview or record yourself when doing OOD and practice explaining your design decisions while you are coding.\"]}),`\n`,(0,e.jsx)(C.h2,{id:\"run-the-code\",children:\"Run The Code\"}),`\n`,(0,e.jsx)(C.p,{children:\"All the code included in this book is executable. We encourage you to download the repository, run the code, and experiment with the solutions to deepen your understanding of OOD principles. Instructions for setting up and running the code are provided in the repository\\u2019s README file.\"}),`\n`,(0,e.jsxs)(C.p,{children:[(0,e.jsx)(C.strong,{children:\"GitHub repo link\"}),\": \",(0,e.jsx)(C.a,{href:\"http://github.com/ByteByteGoHq/ood-interview\",children:\"github.com/ByteByteGoHq/ood-interview\"})]})]})}function M(t={}){let{wrapper:C}=t.components||{};return C?(0,e.jsx)(C,{...t,children:(0,e.jsx)(d,{...t})}):d(t)}function h(t,C){throw new Error(\"Expected \"+(C?\"component\":\"object\")+\" `\"+t+\"` to be defined: you likely forgot to import, pass, or provide it.\")}return b(O);})();\n;return Component;",
+  "toc": [
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "what-is-an-object-oriented-design-interview"
+      ],
+      "id": "what-is-an-object-oriented-design-interview",
+      "chapter": 1,
+      "free": true,
+      "title": "What is an Object-Oriented Design Interview"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "a-framework-for-the-ood-interview"
+      ],
+      "id": "a-framework-for-the-ood-interview",
+      "chapter": 2,
+      "free": true,
+      "title": "A Framework for the OOD Interview"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "oop-fundamentals"
+      ],
+      "id": "oop-fundamentals",
+      "chapter": 3,
+      "title": "OOP Fundamentals"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-parking-lot"
+      ],
+      "id": "design-a-parking-lot",
+      "chapter": 4,
+      "free": true,
+      "title": "Design a Parking Lot"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "movie-ticket-booking-system"
+      ],
+      "id": "movie-ticket-booking-system",
+      "chapter": 5,
+      "title": "Design a Movie Ticket Booking System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-unix-file-search"
+      ],
+      "id": "design-a-unix-file-search",
+      "chapter": 6,
+      "title": "Design a Unix File Search System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-vending-machine"
+      ],
+      "id": "design-a-vending-machine",
+      "chapter": 7,
+      "title": "Design a Vending Machine"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-an-elevator-system"
+      ],
+      "id": "design-an-elevator-system",
+      "chapter": 8,
+      "title": "Design an Elevator System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "grocery-store-system"
+      ],
+      "id": "grocery-store-system",
+      "chapter": 9,
+      "title": "Design a Grocery Store System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-tic-tac-toe-game"
+      ],
+      "id": "design-a-tic-tac-toe-game",
+      "chapter": 10,
+      "title": "Design a Tic Tac Toe Game"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-blackjack-game"
+      ],
+      "id": "design-a-blackjack-game",
+      "chapter": 11,
+      "title": "Design a Blackjack Game"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-shipping-locker"
+      ],
+      "id": "design-a-shipping-locker",
+      "chapter": 12,
+      "title": "Design a Shipping Locker System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-an-automated-teller-machine-atm"
+      ],
+      "id": "design-an-automated-teller-machine-atm",
+      "chapter": 13,
+      "title": "Design an ATM System"
+    },
+    {
+      "course": "object-oriented-design-interview",
+      "slug": [
+        "design-a-restaurant-management-system"
+      ],
+      "id": "design-a-restaurant-management-system",
+      "chapter": 14,
+      "title": "Design a Restaurant Management System"
+    }
+  ],
+  "courseMetadata": {
+    "title": "Object-Oriented Design Interview",
+    "authors": "Alex Xu",
+    "claimCodes": [
+      "annual",
+      "lifetime",
+      "promo"
+    ],
+    "key": "object-oriented-design-interview",
+    "defaultChapter": "/courses/object-oriented-design-interview/what-is-an-object-oriented-design-interview",
+    "rootPath": "/courses/object-oriented-design-interview",
+    "lessons": 14,
+    "students": 5000,
+    "showChapter": true,
+    "lastModified": "2025.02.11"
+  }
+}

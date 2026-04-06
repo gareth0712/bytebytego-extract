@@ -13,6 +13,7 @@ from reportlab.lib.units import inch, mm
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
+    HRFlowable,
     Image,
     PageTemplate,
     Paragraph,
@@ -20,8 +21,6 @@ from reportlab.platypus import (
     Spacer,
     Table,
     TableStyle,
-    Preformatted,
-    HRFlowable,
 )
 
 from fetcher import ContentBlock, PageContent
@@ -79,15 +78,30 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         ),
         "code": ParagraphStyle(
             "CustomCode",
-            parent=base["Code"],
-            fontSize=9,
-            leading=13,
+            parent=base["Normal"],
+            fontSize=8.5,
+            leading=12,
             fontName="Courier",
+            leftIndent=0,
+            rightIndent=0,
+            spaceAfter=0,
+            spaceBefore=0,
+            textColor=colors.HexColor("#333333"),
+        ),
+        "code_block": ParagraphStyle(
+            "CustomCodeBlock",
+            parent=base["Normal"],
+            fontSize=8.5,
+            leading=12,
+            fontName="Courier",
+            leftIndent=0,
+            rightIndent=0,
+            spaceAfter=0,
+            spaceBefore=0,
             backColor=colors.HexColor("#f5f5f5"),
             borderColor=colors.HexColor("#e0e0e0"),
             borderWidth=0.5,
-            borderPadding=6,
-            spaceAfter=10,
+            borderPadding=(6, 8, 6, 8),
             textColor=colors.HexColor("#333333"),
         ),
         "blockquote": ParagraphStyle(
@@ -194,12 +208,217 @@ def _escape_xml(text: str) -> str:
     return text
 
 
-def _fetch_image(url: str, max_width: float = 450):
+_CONTENT_WIDTH = A4[0] - 50 * mm  # page width minus left+right margins
+
+
+def _escape_xml_plain(text: str) -> str:
+    """Escape plain text (no markdown) for ReportLab XML paragraphs.
+
+    Use this for image alt text and other AI-generated descriptions that
+    contain literal characters like * and ` which are NOT markdown markers.
+    """
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    return text
+
+
+_JAVA_KEYWORDS = frozenset({
+    "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char",
+    "class", "const", "continue", "default", "do", "double", "else", "enum",
+    "extends", "final", "finally", "float", "for", "goto", "if", "implements",
+    "import", "instanceof", "int", "interface", "long", "native", "new",
+    "null", "package", "private", "protected", "public", "return", "short",
+    "static", "strictfp", "super", "switch", "synchronized", "this", "throw",
+    "throws", "transient", "true", "false", "try", "void", "volatile", "while",
+    "var", "record", "sealed", "permits", "yield",
+})
+_PYTHON_KEYWORDS = frozenset({
+    "False", "None", "True", "and", "as", "assert", "async", "await",
+    "break", "class", "continue", "def", "del", "elif", "else", "except",
+    "finally", "for", "from", "global", "if", "import", "in", "is",
+    "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
+    "while", "with", "yield", "self", "cls",
+})
+_GENERIC_KEYWORDS = _JAVA_KEYWORDS | _PYTHON_KEYWORDS
+
+# Colour palette (matches a VS Code light theme)
+_COL_KEYWORD = "#0000ff"   # blue   -- language keywords
+_COL_STRING  = "#008000"   # green  -- string literals
+_COL_COMMENT = "#808080"   # gray   -- line comments
+_COL_NUMBER  = "#c76300"   # orange -- numeric literals
+_COL_TYPE    = "#267f99"   # teal   -- PascalCase type names
+
+
+def _xml_escape_raw(text: str) -> str:
+    """Escape only the three XML metacharacters, leaving everything else alone."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _highlight_code_line(line: str, language: str) -> str:
+    """Return a ReportLab-XML string for one source-code line with syntax colours.
+
+    Processes tokens left-to-right in a single pass:
+      1. Line comments (// or #)
+      2. String literals (double- or single-quoted)
+      3. Keywords and identifiers (PascalCase -> type colour)
+      4. Numeric literals
+    Everything else falls through as plain escaped text.
+    """
+    keywords = (
+        _JAVA_KEYWORDS if language in ("java", "kotlin", "scala")
+        else _PYTHON_KEYWORDS if language == "python"
+        else _GENERIC_KEYWORDS
+    )
+
+    result: list[str] = []
+    i = 0
+    n = len(line)
+
+    while i < n:
+        ch = line[i]
+
+        # --- line comment (// or #) ---
+        if (ch == "/" and i + 1 < n and line[i + 1] == "/") or (
+            ch == "#" and language in ("python", "bash", "shell", "sh", "")
+        ):
+            rest = _xml_escape_raw(line[i:])
+            result.append(
+                f'<font name="Courier-Oblique" color="{_COL_COMMENT}">{rest}</font>'
+            )
+            i = n
+            continue
+
+        # --- double-quoted string literal ---
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if line[j] == "\\" and j + 1 < n:
+                    j += 2
+                    continue
+                if line[j] == '"':
+                    j += 1
+                    break
+                j += 1
+            token = _xml_escape_raw(line[i:j])
+            result.append(f'<font color="{_COL_STRING}">{token}</font>')
+            i = j
+            continue
+
+        # --- single-quoted string literal ---
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if line[j] == "\\" and j + 1 < n:
+                    j += 2
+                    continue
+                if line[j] == "'":
+                    j += 1
+                    break
+                j += 1
+            token = _xml_escape_raw(line[i:j])
+            result.append(f'<font color="{_COL_STRING}">{token}</font>')
+            i = j
+            continue
+
+        # --- word token (keyword / identifier / type) ---
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (line[j].isalnum() or line[j] == "_"):
+                j += 1
+            word = line[i:j]
+            escaped = _xml_escape_raw(word)
+            if word in keywords:
+                result.append(
+                    f'<font color="{_COL_KEYWORD}"><b>{escaped}</b></font>'
+                )
+            elif word and word[0].isupper() and len(word) > 1:
+                # PascalCase -> treat as a type / class name
+                result.append(f'<font color="{_COL_TYPE}">{escaped}</font>')
+            else:
+                result.append(escaped)
+            i = j
+            continue
+
+        # --- numeric literal ---
+        if ch.isdigit() or (ch == "." and i + 1 < n and line[i + 1].isdigit()):
+            j = i
+            while j < n and (line[j].isalnum() or line[j] in ".xXbBoO_"):
+                j += 1
+            token = _xml_escape_raw(line[i:j])
+            result.append(f'<font color="{_COL_NUMBER}">{token}</font>')
+            i = j
+            continue
+
+        # --- anything else (operators, punctuation, spaces) ---
+        result.append(_xml_escape_raw(ch))
+        i += 1
+
+    return "".join(result)
+
+
+def _code_block_to_flowables(
+    block_text: str,
+    language: str,
+    styles: dict[str, ParagraphStyle],
+    content_width: float,
+) -> list:
+    """Render a code block as syntax-highlighted Paragraphs inside a Table box.
+
+    Each source line becomes its own Paragraph so that ReportLab XML spans
+    work correctly (ReportLab's Paragraph renderer does not support literal
+    newlines inside tagged content).
+
+    The block is wrapped in a single-cell Table to give it a gray background
+    and border without inheriting the large leftIndent that Preformatted or
+    the built-in Code style would impose.
+    """
+    lang = (language or "").lower()
+    lines = block_text.rstrip().split("\n")
+
+    line_paras: list = []
+    for line in lines:
+        # Expand tabs, then convert leading spaces to non-breaking spaces so
+        # ReportLab does not collapse the indentation.
+        expanded = line.rstrip().expandtabs(4)
+        leading_spaces = len(expanded) - len(expanded.lstrip())
+        indent_str = "\u00a0" * leading_spaces
+        code_content = expanded[leading_spaces:]
+
+        highlighted = _highlight_code_line(code_content, lang)
+        xml_line = indent_str + highlighted if highlighted else "\u00a0"
+        line_paras.append(Paragraph(xml_line, styles["code"]))
+
+    # Wrap all line Paragraphs in a Table for the background box.
+    tbl = Table([[line_paras]], colWidths=[content_width - 2])
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5f5f5")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e0e0e0")),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return [Spacer(1, 6), tbl, Spacer(1, 6)]
+
+
+def _fetch_image(url: str):
     """Download an image and return a ReportLab flowable.
 
     Handles both raster images (PNG/JPG) and SVG images.
     Returns an Image or Drawing flowable, or None on failure.
+
+    Images are capped at 70% of the usable content width to match the
+    proportions shown on the ByteByteGo website (images never fill the
+    full text column).  Small images are never upscaled.
     """
+    # 70% of the usable content width (page minus left+right margins)
+    max_width = _CONTENT_WIDTH * 0.70
+    # Leave room for margins and footer; also cap at half the page height
+    # so a single image never dominates an entire page.
+    max_height = min(A4[1] - 80 * mm, A4[1] * 0.50)
+
     try:
         headers = {
             "User-Agent": (
@@ -221,8 +440,7 @@ def _fetch_image(url: str, max_width: float = 450):
             if drawing is None:
                 return None
 
-            # Scale to fit max_width AND max page height
-            max_height = A4[1] - 80 * mm  # leave room for margins + footer
+            # Scale down to fit max_width AND max_height; never upscale
             orig_w = drawing.width
             orig_h = drawing.height
             if orig_w > 0 and orig_h > 0:
@@ -238,8 +456,9 @@ def _fetch_image(url: str, max_width: float = 450):
         img = Image(img_data)
 
         orig_w, orig_h = img.imageWidth, img.imageHeight
-        if orig_w > 0:
-            scale = min(max_width / orig_w, 1.0)
+        if orig_w > 0 and orig_h > 0:
+            # Scale down to fit max_width AND max_height; never upscale
+            scale = min(max_width / orig_w, max_height / orig_h, 1.0)
             img.drawWidth = orig_w * scale
             img.drawHeight = orig_h * scale
 
@@ -258,9 +477,6 @@ def _add_footer(canvas, doc):
     page_num = canvas.getPageNumber()
     canvas.drawCentredString(A4[0] / 2, 15 * mm, f"— {page_num} —")
     canvas.restoreState()
-
-
-_CONTENT_WIDTH = A4[0] - 50 * mm  # page width minus left+right margins
 
 
 def content_to_flowables(
@@ -284,8 +500,15 @@ def content_to_flowables(
             story.append(Paragraph(text, styles[style_key]))
 
         elif block.tag == "p":
-            text = _escape_xml(block.text)
-            story.append(Paragraph(text, styles["body"]))
+            raw = block.text
+            # Math blocks ($$...$$ display math): strip delimiters, render as monospace
+            if raw.startswith("$$") and raw.endswith("$$"):
+                inner = raw[2:-2].strip()
+                text = _escape_xml(inner)
+                story.append(Paragraph(text, styles["code"]))
+            else:
+                text = _escape_xml(raw)
+                story.append(Paragraph(text, styles["body"]))
 
         elif block.tag == "img":
             img = _fetch_image(block.src)
@@ -294,7 +517,7 @@ def content_to_flowables(
                 story.append(img)
                 if block.alt:
                     story.append(
-                        Paragraph(_escape_xml(block.alt), styles["caption"])
+                        Paragraph(_escape_xml_plain(block.alt), styles["caption"])
                     )
                 story.append(Spacer(1, 6))
 
@@ -311,13 +534,12 @@ def content_to_flowables(
             story.append(Spacer(1, 6))
 
         elif block.tag == "pre":
-            # Use Preformatted for code blocks to preserve whitespace
-            code_text = block.text.rstrip()
-            story.append(Spacer(1, 4))
-            story.append(
-                Preformatted(code_text, styles["code"])
+            # Render with syntax highlighting and a Table-based background box.
+            story.extend(
+                _code_block_to_flowables(
+                    block.text, block.language, styles, _CONTENT_WIDTH
+                )
             )
-            story.append(Spacer(1, 4))
 
         elif block.tag == "blockquote":
             text = _escape_xml(block.text)
@@ -411,8 +633,12 @@ def content_to_flowables(
 
 
 def generate_pdf_filename(page: PageContent) -> str:
-    """Generate the PDF filename from chapter number and title."""
-    num = f"{page.chapter_number:02d}"
+    """Generate the PDF filename from chapter number and title.
+
+    Handles both int chapter numbers (OOD course: 1 → "01") and
+    string chapter numbers (Coding Patterns course: "01-00" → "01-00").
+    """
+    num = str(page.chapter_number) if isinstance(page.chapter_number, str) else f"{page.chapter_number:02d}"
     title = re.sub(r'[<>:"/\\|?*]', '', page.title)
     title = re.sub(r'\s+', ' ', title).strip()
     return f"{num}. {title}.pdf"
