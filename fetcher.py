@@ -28,7 +28,7 @@ _V = r"\w+"   # component namespace  (was hardcoded as `C` or `i`)
 class ContentBlock:
     """Represents a parsed content element from the page."""
     tag: str  # "heading", "p", "img", "ul", "ol", "pre", "blockquote",
-              # "hr", "info-box", "sample-dialogue", "table"
+              # "hr", "info-box", "sample-dialogue", "table", "chapter-number"
     text: str = ""
     level: int = 0  # heading level for h1-h6
     src: str = ""  # image source URL
@@ -241,19 +241,20 @@ def _parse_jsxs_children(inner: str) -> str:
         if latex_text:
             jsx_parts.append((start, full_end, latex_text))
 
-    # Collect all literal ranges (jsx + standalone) to prevent overlapping matches.
-    # Single-quoted strings can contain double quotes and vice versa, so we
-    # process from longest-span first and skip any literal whose position
-    # falls inside an already-claimed range.
+    # Build claimed_ranges from JSX parts so that plain-string scanners below
+    # can skip positions already consumed by a structured JSX match.
     claimed_ranges: list[tuple[int, int]] = []
     for s, e, _ in jsx_parts:
         claimed_ranges.append((s, e))
 
-    plain_parts: list[tuple[int, str]] = []
+    # Collect all candidate plain-text matches (backtick, single-quoted,
+    # double-quoted) with their positions, then resolve overlaps in a single
+    # greedy pass sorted by start position.  Processing all three kinds before
+    # filtering prevents the classic cross-type overlap: e.g. a single-quote
+    # regex finding 'd like…we' inside a double-quoted string "I'd like…we're".
+    candidate_parts: list[tuple[int, int, str]] = []  # (start, end, text)
 
-    # Backtick template literals first (they can contain both 'single' and
-    # "double" quoted words as prose — claim them before shorter quote matches
-    # extract those words as duplicates).
+    # Backtick template literals
     for m in re.finditer(r'`((?:[^`\\]|\\.)*)`', inner):
         pos, end = m.start(), m.end()
         if any(s <= pos < e for s, e in claimed_ranges):
@@ -261,8 +262,7 @@ def _parse_jsxs_children(inner: str) -> str:
         text = m.group(1)
         text = text.encode().decode("unicode_escape", errors="replace")
         text = re.sub(r'\s+', ' ', text)
-        plain_parts.append((pos, text))
-        claimed_ranges.append((pos, end))
+        candidate_parts.append((pos, end, text))
 
     # Single-quoted strings (they can contain "double quotes" inside)
     for m in re.finditer(r"'((?:[^'\\]|\\.)*)'", inner):
@@ -272,8 +272,7 @@ def _parse_jsxs_children(inner: str) -> str:
         prefix = inner[max(0, pos - 15):pos]
         if re.search(r'(?:className|id|src|alt|href|width|height):$', prefix):
             continue
-        plain_parts.append((pos, m.group(1)))
-        claimed_ranges.append((pos, end))
+        candidate_parts.append((pos, end, m.group(1)))
 
     # Double-quoted strings
     for m in re.finditer(r'"((?:[^"\\]|\\.)*)"', inner):
@@ -283,8 +282,20 @@ def _parse_jsxs_children(inner: str) -> str:
         prefix = inner[max(0, pos - 15):pos]
         if re.search(r'(?:className|id|src|alt|href|width|height):$', prefix):
             continue
-        plain_parts.append((pos, _unescape(m.group(1))))
-        claimed_ranges.append((pos, end))
+        candidate_parts.append((pos, end, _unescape(m.group(1))))
+
+    # Resolve overlaps: sort by start, then greedily accept non-overlapping
+    # matches.  This prevents a single-quoted fragment that starts inside a
+    # double-quoted string (or vice versa) from surviving as a duplicate.
+    candidate_parts.sort(key=lambda x: x[0])
+    plain_parts: list[tuple[int, str]] = []
+    last_accepted_end = 0
+    for pos, end, text in candidate_parts:
+        if pos < last_accepted_end:
+            # This match overlaps with the previously accepted match — skip it.
+            continue
+        plain_parts.append((pos, text))
+        last_accepted_end = end
 
     # Merge all parts sorted by position
     all_parts: list[tuple[int, str]] = []
@@ -1343,12 +1354,58 @@ def _parse_list_items(inner: str) -> list[str]:
         matches.append((m.start(), _unescape(m.group(1))))
 
     # Compound: (0,J.jsxs)(V.li,{children:[...]})
-    # re.DOTALL is required: li children may contain backtick template literals
-    # or quoted strings with embedded newlines (e.g. from multi-line compiled JSX).
-    for m in re.finditer(
-        rf'\(0,{_J}\.jsxs\)\({_V}\.li,\{{children:\[(.*?)\]\}}\)', inner, re.DOTALL
-    ):
-        text = _parse_jsxs_children(m.group(1))
+    # Regex with (.*?) would stop at the FIRST ]} found, which may be inside a
+    # nested JSX children array (e.g. inside a strong's children:[...]).
+    # Instead, find the opening prefix with regex, then use bracket-depth tracking
+    # to locate the correct closing ] of the li's own children array.
+    prefix_re = re.compile(
+        rf'\(0,{_J}\.jsxs\)\({_V}\.li,\{{children:\[', re.DOTALL
+    )
+    for m in prefix_re.finditer(inner):
+        open_bracket_pos = m.end() - 1  # position of the '[' that opens children
+        # Walk forward tracking bracket depth to find the matching ']'
+        depth = 0
+        i = open_bracket_pos
+        n = len(inner)
+        children_start = open_bracket_pos + 1  # first char after '['
+        children_end = None
+        while i < n:
+            ch = inner[i]
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+                if depth == 0:
+                    children_end = i
+                    break
+            elif ch == '"':
+                # Skip double-quoted string
+                i += 1
+                while i < n and inner[i] != '"':
+                    if inner[i] == '\\':
+                        i += 1  # skip escaped char
+                    i += 1
+            elif ch == "'":
+                # Skip single-quoted string
+                i += 1
+                while i < n and inner[i] != "'":
+                    if inner[i] == '\\':
+                        i += 1
+                    i += 1
+            elif ch == '`':
+                # Skip backtick template literal
+                i += 1
+                while i < n and inner[i] != '`':
+                    i += 1
+            i += 1
+        if children_end is None:
+            continue  # malformed — skip
+        # Verify the li closes with ]}) after the children array
+        suffix = inner[children_end : children_end + 3]
+        if suffix != ']})':
+            continue
+        children_inner = inner[children_start:children_end]
+        text = _parse_jsxs_children(children_inner)
         if text:
             matches.append((m.start(), text))
 
@@ -1542,8 +1599,72 @@ def parse_content(html: str) -> PageContent:
 
     blocks = _parse_mdx_code(code)
 
+    # Prepend a chapter-number block so exporters can render the large green
+    # chapter number that appears at the top of every ByteByteGo page.
+    # The number is formatted as a zero-padded two-digit string (e.g. "02").
+    if chapter_number:
+        num_str = (
+            str(chapter_number)
+            if isinstance(chapter_number, str)
+            else f"{chapter_number:02d}"
+        )
+        blocks = [ContentBlock(tag="chapter-number", text=num_str)] + blocks
+
     return PageContent(
         title=title,
         chapter_number=chapter_number,
         blocks=blocks,
     )
+
+
+def extract_toc(html: str) -> list[dict]:
+    """Extract the table of contents from a fetched page's HTML.
+
+    The TOC is present in pageProps.toc on every chapter page, regardless of
+    which chapter was fetched. Each entry has the shape:
+        {"course": str, "slug": list[str] | str, "id": str,
+         "chapter": int | str, "title": str, "free": bool}
+
+    Returns an empty list if the page has no TOC (e.g. paywalled with no auth).
+    """
+    data = _extract_next_data(html)
+    page_props = data["props"]["pageProps"]
+    return page_props.get("toc", [])
+
+
+def build_chapter_url(base_url: str, toc_entry: dict) -> str:
+    """Build the full URL for a chapter from a TOC entry.
+
+    The course base URL is derived from the provided chapter URL by stripping
+    everything after the course name segment.
+
+    Slug field may be a list (e.g. ["design-a-parking-lot"]) or a string.
+    For a single-element list the URL is: {base_url}/{slug[0]}
+    For a multi-element list the URL is:  {base_url}/{slug[0]}/{slug[1]}
+    For a plain string slug the URL is:   {base_url}/{slug}
+    """
+    slug = toc_entry["slug"]
+    if isinstance(slug, list):
+        path = "/".join(slug)
+    else:
+        path = slug
+    return f"{base_url.rstrip('/')}/{path}"
+
+
+def derive_course_base_url(chapter_url: str) -> str:
+    """Derive the course base URL from any chapter URL.
+
+    For example:
+        https://bytebytego.com/courses/object-oriented-design-interview/design-a-parking-lot
+        -> https://bytebytego.com/courses/object-oriented-design-interview
+
+        https://bytebytego.com/courses/coding-patterns/two-pointers/introduction-to-two-pointers
+        -> https://bytebytego.com/courses/coding-patterns
+    """
+    # Split on /courses/ and take the first path segment after it
+    parts = chapter_url.split("/courses/", 1)
+    if len(parts) < 2:
+        raise ValueError(f"URL does not contain /courses/: {chapter_url}")
+    course_name = parts[1].split("/")[0]
+    base = parts[0].rstrip("/")
+    return f"{base}/courses/{course_name}"

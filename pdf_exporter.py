@@ -123,8 +123,8 @@ def _build_styles() -> dict[str, ParagraphStyle]:
             parent=base["Normal"],
             fontSize=10.5,
             leading=16,
-            leftIndent=24,
-            bulletIndent=12,
+            leftIndent=0,
+            bulletIndent=0,
             spaceAfter=4,
             textColor=colors.HexColor("#2d3436"),
         ),
@@ -183,6 +183,15 @@ def _build_styles() -> dict[str, ParagraphStyle]:
             leading=16,
             spaceAfter=6,
             textColor=colors.HexColor("#2d3436"),
+        ),
+        "chapter_number": ParagraphStyle(
+            "CustomChapterNumber",
+            parent=base["Normal"],
+            fontSize=48,
+            leading=56,
+            spaceAfter=4,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#16a34a"),
         ),
     }
     return styles
@@ -389,18 +398,52 @@ def _code_block_to_flowables(
         xml_line = indent_str + highlighted if highlighted else "\u00a0"
         line_paras.append(Paragraph(xml_line, styles["code"]))
 
-    # Wrap all line Paragraphs in a Table for the background box.
-    tbl = Table([[line_paras]], colWidths=[content_width - 2])
-    tbl.setStyle(TableStyle([
+    # One row per line so ReportLab can split the table across page breaks
+    # (a single-cell table taller than the page frame causes "Flowable too large").
+    n = len(line_paras)
+    table_data = [[p] for p in line_paras]
+    tbl = Table(table_data, colWidths=[content_width - 2], splitByRow=1)
+    style_cmds = [
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5f5f5")),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e0e0e0")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        # Outer border: draw each side explicitly so it survives page splits.
+        ("LINEBEFORE",  (0, 0), (0, -1), 0.5, colors.HexColor("#e0e0e0")),
+        ("LINEAFTER",   (0, 0), (0, -1), 0.5, colors.HexColor("#e0e0e0")),
+        ("LINEABOVE",   (0, 0), (0,  0), 0.5, colors.HexColor("#e0e0e0")),
+        ("LINEBELOW",   (0, -1), (0, -1), 0.5, colors.HexColor("#e0e0e0")),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        # Top padding only on first row, bottom padding only on last row.
+        ("TOPPADDING",    (0, 0),    (0, 0),    8),
+        ("TOPPADDING",    (0, 1),    (0, -1),   0),
+        ("BOTTOMPADDING", (0, 0),    (0, n - 2), 0),
+        ("BOTTOMPADDING", (0, n - 1), (0, n - 1), 8),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
+    ]
+    tbl.setStyle(TableStyle(style_cmds))
     return [Spacer(1, 6), tbl, Spacer(1, 6)]
+
+
+_WEB_CONTENT_WIDTH_PX = 940.0
+"""Approximate CSS pixel width of the ByteByteGo article content column.
+
+Used to convert native image pixel dimensions into a proportional PDF width.
+A 624px-wide image on a 700px column occupies 89% of the column; we apply that
+same proportion to the PDF content width so large and small images scale
+naturally rather than being forced to the same fixed cap.
+"""
+
+
+def _proportional_pdf_width(native_px: float) -> float:
+    """Return the target PDF width (in points) for an image that is native_px
+    wide in the original web layout.
+
+    The result is capped at 95% of the usable content width so images never
+    overflow the page, but small images (e.g. half-column diagrams) are kept
+    proportionally smaller rather than all being stretched to a uniform cap.
+    """
+    fraction = native_px / _WEB_CONTENT_WIDTH_PX
+    target = _CONTENT_WIDTH * fraction
+    return min(target, _CONTENT_WIDTH * 0.95)
 
 
 def _fetch_image(url: str):
@@ -409,14 +452,15 @@ def _fetch_image(url: str):
     Handles both raster images (PNG/JPG) and SVG images.
     Returns an Image or Drawing flowable, or None on failure.
 
-    Images are capped at 70% of the usable content width to match the
-    proportions shown on the ByteByteGo website (images never fill the
-    full text column).  Small images are never upscaled.
+    Image width is scaled proportionally: the native pixel width is compared
+    to the website's content column width (~700 px) to derive a fraction, and
+    that fraction is applied to the PDF content width.  This means a 624 px
+    image (89% of column) appears near full-width while a 326 px image (47%)
+    appears at roughly half width — matching the original web proportions.
+    The PDF width is capped at 95% of the content area and the height is capped
+    at half the page height; images are never upscaled beyond their native size.
     """
-    # 70% of the usable content width (page minus left+right margins)
-    max_width = _CONTENT_WIDTH * 0.70
-    # Leave room for margins and footer; also cap at half the page height
-    # so a single image never dominates an entire page.
+    # Hard cap on height to prevent a single image from dominating a page.
     max_height = min(A4[1] - 80 * mm, A4[1] * 0.50)
 
     try:
@@ -440,15 +484,17 @@ def _fetch_image(url: str):
             if drawing is None:
                 return None
 
-            # Scale down to fit max_width AND max_height; never upscale
             orig_w = drawing.width
             orig_h = drawing.height
             if orig_w > 0 and orig_h > 0:
-                scale = min(max_width / orig_w, max_height / orig_h, 1.0)
+                target_w = _proportional_pdf_width(orig_w)
+                # Never upscale; also never exceed the height cap.
+                scale = min(target_w / orig_w, max_height / orig_h, 1.0)
                 drawing.width = orig_w * scale
                 drawing.height = orig_h * scale
                 drawing.scale(scale, scale)
 
+            drawing.hAlign = "CENTER"
             return drawing
 
         # Raster image
@@ -457,8 +503,9 @@ def _fetch_image(url: str):
 
         orig_w, orig_h = img.imageWidth, img.imageHeight
         if orig_w > 0 and orig_h > 0:
-            # Scale down to fit max_width AND max_height; never upscale
-            scale = min(max_width / orig_w, max_height / orig_h, 1.0)
+            target_w = _proportional_pdf_width(orig_w)
+            # Never upscale; also never exceed the height cap.
+            scale = min(target_w / orig_w, max_height / orig_h, 1.0)
             img.drawWidth = orig_w * scale
             img.drawHeight = orig_h * scale
 
@@ -485,11 +532,19 @@ def content_to_flowables(
     """Convert PageContent blocks into ReportLab flowables."""
     story = []
 
+    # If the first block is a chapter-number, render it before the title so the
+    # large green number appears at the very top (matching the ByteByteGo page layout).
+    blocks = page.blocks
+    if blocks and blocks[0].tag == "chapter-number":
+        story.append(Paragraph(blocks[0].text, styles["chapter_number"]))
+        story.append(Spacer(1, 4))
+        blocks = blocks[1:]
+
     # Add page title
     story.append(Paragraph(_escape_xml(page.title), styles["title"]))
     story.append(Spacer(1, 12))
 
-    for block in page.blocks:
+    for block in blocks:
         if block.tag == "heading":
             level = block.level
             style_key = f"h{min(level, 3)}"
@@ -628,6 +683,11 @@ def content_to_flowables(
                 ]))
                 story.append(tbl)
                 story.append(Spacer(1, 8))
+
+        elif block.tag == "chapter-number":
+            # Render as large green bold number (fallback if not at position 0)
+            story.append(Paragraph(block.text, styles["chapter_number"]))
+            story.append(Spacer(1, 4))
 
     return story
 

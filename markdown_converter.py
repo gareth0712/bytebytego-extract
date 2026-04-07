@@ -53,7 +53,12 @@ def blocks_to_markdown(blocks: list[ContentBlock], title: str = "") -> str:
         lines.append("")
 
     for block in blocks:
-        if block.tag == "heading":
+        if block.tag == "chapter-number":
+            # Render the large chapter number as bold text before the title heading
+            lines.append(f"**Chapter {block.text}**")
+            lines.append("")
+
+        elif block.tag == "heading":
             prefix = "#" * block.level
             lines.append(f"{prefix} {block.text}")
             lines.append("")
