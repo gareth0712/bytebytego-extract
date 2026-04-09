@@ -164,27 +164,54 @@ def _parse_jsxs_children(inner: str) -> str:
     """
     jsx_parts: list[tuple[int, int, str]] = []  # (start, end, rendered_text)
 
-    # Strong
+    # Strong (namespace-ref variant: V.strong)
     for m in re.finditer(
         rf'\(0,{_J}\.jsx\)\({_V}\.strong,\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
     ):
         jsx_parts.append((m.start(), m.end(), f"**{_unescape(m.group(1))}**"))
 
-    # Em
+    # Strong (raw-string variant: "strong")
+    for m in re.finditer(
+        rf'\(0,\w+\.jsx\)\("strong",\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
+    ):
+        jsx_parts.append((m.start(), m.end(), f"**{_unescape(m.group(1))}**"))
+
+    # Em (namespace-ref variant: V.em)
     for m in re.finditer(
         rf'\(0,{_J}\.jsx\)\({_V}\.em,\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
     ):
         jsx_parts.append((m.start(), m.end(), f"*{_unescape(m.group(1))}*"))
 
-    # Inline code
+    # Em (raw-string variant: "em")
+    for m in re.finditer(
+        rf'\(0,\w+\.jsx\)\("em",\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
+    ):
+        jsx_parts.append((m.start(), m.end(), f"*{_unescape(m.group(1))}*"))
+
+    # Inline code (namespace-ref variant: V.code)
     for m in re.finditer(
         rf'\(0,{_J}\.jsx\)\({_V}\.code,\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
+    ):
+        jsx_parts.append((m.start(), m.end(), f"`{_unescape(m.group(1))}`"))
+
+    # Inline code (raw-string variant: "code")
+    for m in re.finditer(
+        rf'\(0,\w+\.jsx\)\("code",\{{children:"((?:[^"\\]|\\.)*)"\}}\)', inner
     ):
         jsx_parts.append((m.start(), m.end(), f"`{_unescape(m.group(1))}`"))
 
     # Links
     for m in re.finditer(
         rf'\(0,{_J}\.jsx\)\({_V}\.a,\{{href:"([^"]*)",children:"((?:[^"\\]|\\.)*)"\}}\)',
+        inner,
+    ):
+        href = m.group(1)
+        text = _unescape(m.group(2))
+        jsx_parts.append((m.start(), m.end(), f"[{text}]({href})"))
+
+    # Links with underline wrapper: (0,J.jsx)(V.a,{href:"...",children:(0,J.jsx)("u",{children:"..."})})
+    for m in re.finditer(
+        rf'\(0,{_J}\.jsx\)\({_V}\.a,\{{href:"([^"]*)",children:\(0,{_J}\.jsx\)\("u",\{{children:"((?:[^"\\]|\\.)*)"\}}\)\}}\)',
         inner,
     ):
         href = m.group(1)
@@ -368,11 +395,25 @@ def _split_top_level_elements(content_js: str) -> list[str]:
                     current.append(content_js[i])  # closing backtick
             else:
                 # depth > 0 but bracket_depth == 0: we are inside a JSX call
-                # but not inside a [...] array. The backtick is part of the
-                # current element (e.g. a template-literal prop value) and
-                # must NOT trigger the consumption loop, which could eat past
-                # the element boundary.
+                # but not inside a [...] array. The backtick starts a template
+                # literal prop value (e.g. children:`...`). Consume the entire
+                # template literal here so that any embedded " characters inside
+                # it do NOT trigger the double-quote skip loop below, which
+                # would jump past the template boundary into subsequent elements.
                 current.append(ch)
+                i += 1
+                while i < n:
+                    c2 = content_js[i]
+                    current.append(c2)
+                    if c2 == '\\':
+                        i += 1
+                        if i < n:
+                            current.append(content_js[i])
+                            i += 1
+                        continue
+                    if c2 == '`':
+                        break  # closing backtick consumed
+                    i += 1
         elif ch == '"':
             # Skip string literals to avoid false depth changes
             current.append(ch)
@@ -661,6 +702,107 @@ def _parse_table_cell(cell_content: str) -> str:
             if para_texts:
                 return "\n\n".join(para_texts)
             return _parse_jsxs_children(inner)
+    # td containing a raw-string "ul"/"ol" with li items (Ch17/Ch18 pattern):
+    # children:(0,J.jsxs)("ul",{children:[(0,J.jsx)("li",{children:...}),...]})
+    ul_m = re.search(
+        r'children:\(0,\w+\.jsx[s]?\)\("(?:ul|ol)",\{children:\[(.*)\]\}\)',
+        cell_content,
+        re.DOTALL,
+    )
+    if ul_m:
+        ul_inner = ul_m.group(1)
+        # Each li may have children:"...", children:'...', or children:`...`,
+        # or deeply-nested JSX like blockquote > p > jsxs with inline elements.
+        # Use brace-depth tracking to extract each li's full props dict so that
+        # nested closing braces don't truncate the match prematurely.
+        li_texts: list[str] = []
+        for li_m in re.finditer(r'"li",\{', ul_inner):
+            brace_pos = li_m.end() - 1  # position of the opening '{'
+            li_props = _extract_brace_content(ul_inner, brace_pos)
+            if li_props is None:
+                continue
+            # li_props is now the full props dict content, e.g.:
+            #   children:"text"  or  children:(0,e.jsx)("blockquote",{...})
+            ch_m = re.match(r'children:(.*)', li_props, re.DOTALL)
+            if not ch_m:
+                continue
+            li_content = ch_m.group(1).strip()
+
+            # Walk down wrapper layers: "blockquote", "p", or namespace .p
+            # Each wrapper is a single JSX call whose sole prop is children:...
+            # We keep unwrapping as long as we find a wrapper pattern.
+            _wrapper_pat = re.compile(
+                r'^\(0,\w+\.jsx[s]?\)\((?:"(?:blockquote|p)"|\w+\.\w+),\{',
+                re.DOTALL,
+            )
+            for _ in range(5):  # at most 5 layers deep
+                wm = _wrapper_pat.match(li_content)
+                if not wm:
+                    break
+                # The opening '{' is at wm.end() - 1
+                inner_props = _extract_brace_content(li_content, wm.end() - 1)
+                if inner_props is None:
+                    break
+                inner_ch = re.match(r'children:(.*)', inner_props, re.DOTALL)
+                if not inner_ch:
+                    break
+                li_content = inner_ch.group(1).strip()
+
+            # li_content is now the innermost value after all wrapper children:.
+            # Handle simple string literals first.
+            dq_m = re.match(r'"((?:[^"\\]|\\.)*)"$', li_content)
+            if dq_m:
+                li_texts.append(_unescape(dq_m.group(1)))
+                continue
+            sq_m = re.match(r"'((?:[^'\\]|\\.)*)'$", li_content)
+            if sq_m:
+                li_texts.append(_unescape(sq_m.group(1)))
+                continue
+            bt_m = re.match(r'`((?:[^`\\]|\\.)*)`$', li_content, re.DOTALL)
+            if bt_m:
+                li_texts.append(_unescape(bt_m.group(1)))
+                continue
+            # Array children: [(0,e.jsx)("strong",..),  `text`, ...]
+            arr_m = re.match(r'\[(.*)\]$', li_content, re.DOTALL)
+            if arr_m:
+                li_texts.append(_parse_jsxs_children(arr_m.group(1)))
+                continue
+            # Compound jsxs call with children array as sole prop
+            jsxs_m = re.match(r'\(0,\w+\.jsx[s]?\)\(\w+\.\w+,\{', li_content)
+            if jsxs_m:
+                inner_props2 = _extract_brace_content(li_content, jsxs_m.end() - 1)
+                if inner_props2 is not None:
+                    arr2_m = re.search(r'children:\[(.*)\]', inner_props2, re.DOTALL)
+                    if arr2_m:
+                        li_texts.append(_parse_jsxs_children(arr2_m.group(1)))
+                        continue
+            # Fallback: let _parse_jsxs_children handle whatever remains
+            li_texts.append(_parse_jsxs_children(li_content))
+        if li_texts:
+            return " • ".join(li_texts)
+    # td containing a single namespace-ref paragraph (Ch19 pattern):
+    # children:(0,J.jsx)(V.p,{children:`...`}) or "..." or '...'
+    p_m = re.search(
+        rf'children:\(0,{_J}\.jsx[s]?\)\({_V}\.p,\{{children:(.+)\}}\)',
+        cell_content,
+        re.DOTALL,
+    )
+    if p_m:
+        p_children = p_m.group(1).rstrip(", \t\n")
+        bt_m = re.match(r'`((?:[^`\\]|\\.)*)`$', p_children, re.DOTALL)
+        if bt_m:
+            return _unescape(bt_m.group(1))
+        dq_m = re.match(r'"((?:[^"\\]|\\.)*)"$', p_children)
+        if dq_m:
+            return _unescape(dq_m.group(1))
+        sq_m = re.match(r"'((?:[^'\\]|\\.)*)'$", p_children)
+        if sq_m:
+            return _unescape(sq_m.group(1))
+        # Array or compound children inside the p
+        am = re.match(r'\[(.*)\]$', p_children, re.DOTALL)
+        if am:
+            return _parse_jsxs_children(am.group(1))
+        return _parse_jsxs_children(p_children)
     # Simple string: children:"text"
     m = re.search(r'children:"((?:[^"\\]|\\.)*)"', cell_content)
     if m:
@@ -823,48 +965,144 @@ def _parse_raw_string_table(element: str) -> ContentBlock | None:
 
     This variant appears in the ML System Design course. Instead of namespace
     references (t.table, t.thead, etc.), it uses raw string tag names in quotes.
-    Headers come from "td" cells inside "thead" (often wrapping a "strong" element),
-    and body cells may contain nested "div" children with bullet-prefixed text.
+    Headers come from "td" or "th" cells inside "thead" (often wrapping a "strong"
+    element), and body cells may contain nested "div" children with bullet-prefixed
+    text.
+
+    Handles:
+    - "tr" with extra props before children: e.g. class:"odd",children:[...]
+    - Single-child "tr" (no array): children:(0,J.jsx)("td",{...})
+    - "th" header cells (in addition to "td" wrapped in "strong")
+    - "center"-wrapped "th"/"td" header cells
     """
     headers: list[str] = []
     rows: list[list[str]] = []
 
-    # Extract headers from thead > tr > td (using raw string "td", not t.th)
+    def _extract_header_text(cell_inner: str) -> str:
+        """Extract text from a thead cell — handles strong-wrapped, direct th, and plain td."""
+        strong_m = re.search(r'"strong",\{children:"((?:[^"\\]|\\.)*)"\}', cell_inner)
+        if strong_m:
+            return _unescape(strong_m.group(1))
+        return _parse_table_cell(cell_inner)
+
+    # Extract headers from thead > tr > td or th.
+    # Allow optional extra props (e.g. class:"...") before children:[
     thead_match = re.search(
-        rf'"thead",\{{children:.*?"tr",\{{children:\[(.*?)\]\}}',
+        rf'"thead",\{{children:.*?"tr",\{{(?:[^{{}}]*?,)?children:\[(.*?)\]\}}',
         element, re.DOTALL,
     )
-    if thead_match:
+    # Fallback: single-child "tr" inside thead — children is a direct JSX call, not an
+    # array. e.g. "thead",{children:(0,e.jsx)("tr",{children:(0,e.jsx)("th",{...})})}
+    # Use brace-depth tracking to extract the "tr" props dict, then read its children value.
+    thead_row: str | None = thead_match.group(1) if thead_match else None
+    if thead_row is None:
+        thead_pos = element.find('"thead"')
+        if thead_pos != -1:
+            # Find the "tr" call inside thead and extract its props via brace-depth tracking.
+            tr_m = re.search(
+                rf'\(0,{_J}\.jsx[s]?\)\("tr",\{{',
+                element[thead_pos:], re.DOTALL,
+            )
+            if tr_m:
+                # tr_m.end()-1 is the offset of '{' relative to thead_pos
+                tr_brace_start = thead_pos + tr_m.end() - 1
+                tr_props = _extract_brace_content(element, tr_brace_start)
+                if tr_props is not None:
+                    # tr_props is "children:(0,e.jsx)(...)" or "children:[...]"
+                    # Use as thead_row directly — the header-cell regexes below
+                    # will search inside it for "td", "th", or "center" calls.
+                    thead_row = tr_props
+    if thead_row is not None:
+        # Look for "td" cells (ML course style: td wrapping strong)
         for m in re.finditer(
             rf'\(0,{_J}\.jsx[s]?\)\("td",\{{(.*?)\}}\)',
-            thead_match.group(1), re.DOTALL,
+            thead_row, re.DOTALL,
         ):
-            # Header cells often wrap text in "strong": children:(0,J.jsx)("strong",{children:"text"})
-            cell_inner = m.group(1)
-            strong_m = re.search(r'"strong",\{children:"((?:[^"\\]|\\.)*)"\}', cell_inner)
-            if strong_m:
-                headers.append(_unescape(strong_m.group(1)))
-            else:
-                headers.append(_parse_table_cell(cell_inner))
+            headers.append(_extract_header_text(m.group(1)))
+        # Look for "th" cells (used instead of "td" in some courses)
+        if not headers:
+            for m in re.finditer(
+                rf'\(0,{_J}\.jsx[s]?\)\("th",\{{(.*?)\}}\)',
+                thead_row, re.DOTALL,
+            ):
+                headers.append(_extract_header_text(m.group(1)))
+        # Handle "center"-wrapped "th"/"td" cells
+        if not headers:
+            for m in re.finditer(
+                rf'\(0,{_J}\.jsx[s]?\)\("center",\{{children:\(0,{_J}\.jsx[s]?\)\("t[hd]",\{{(.*?)\}}\)\}}\)',
+                thead_row, re.DOTALL,
+            ):
+                headers.append(_extract_header_text(m.group(1)))
 
-    # Extract body rows from tbody > tr > td
+    def _extract_cells_from_row_text(row_text: str) -> list[str]:
+        """Extract td cells from a row's children text (for array-syntax rows)."""
+        cells = []
+        for td_match in re.finditer(
+            rf'\(0,{_J}\.jsx[s]?\)\("td",\{{(.*?)\}}\)',
+            row_text, re.DOTALL,
+        ):
+            cells.append(_parse_table_cell(td_match.group(1)))
+        return cells
+
+    # Extract body rows from tbody > tr > td.
+    # Primary path: tbody children is an array of "tr" elements.
     tbody_match = re.search(
         rf'"tbody",\{{children:\[(.*)\]\}}',
         element, re.DOTALL,
     )
-    if tbody_match:
+    # Fallback: single-child tbody — children is a direct JSX "tr" call, not an array.
+    # e.g. "tbody",{children:(0,e.jsx)("tr",{children:(0,e.jsx)("td",{...})})}
+    # Use brace-depth tracking on the "tbody" props dict so the "tr" regexes below
+    # can search inside it for both array and single-child rows.
+    tbody_text: str | None = tbody_match.group(1) if tbody_match else None
+    if tbody_text is None:
+        tbody_m = re.search(
+            rf'\(0,{_J}\.jsx[s]?\)\("tbody",\{{',
+            element, re.DOTALL,
+        )
+        if tbody_m:
+            tbody_brace_start = tbody_m.end() - 1
+            tbody_props = _extract_brace_content(element, tbody_brace_start)
+            if tbody_props is not None:
+                # tbody_props is "children:(0,e.jsx)("tr",{...})" — use as tbody_text
+                # so the "tr" regexes below search inside it.
+                tbody_text = tbody_props
+    if tbody_text is not None:
+        # Primary path: "tr" with children array (allows extra props before children:)
+        matched_any_row = False
         for row_match in re.finditer(
-            rf'\(0,{_J}\.jsxs?\)\("tr",\{{children:\[(.*?)\]\}}\)',
-            tbody_match.group(1), re.DOTALL,
+            rf'\(0,{_J}\.jsxs?\)\("tr",\{{(?:[^{{}}]*?,)?children:\[(.*?)\]\}}\)',
+            tbody_text, re.DOTALL,
         ):
-            cells = []
-            for td_match in re.finditer(
-                rf'\(0,{_J}\.jsx[s]?\)\("td",\{{(.*?)\}}\)',
-                row_match.group(1), re.DOTALL,
-            ):
-                cells.append(_parse_table_cell(td_match.group(1)))
+            cells = _extract_cells_from_row_text(row_match.group(1))
             if cells:
                 rows.append(cells)
+                matched_any_row = True
+
+        # Fallback: single-child "tr" — children is a direct JSX call, not an array.
+        # Pattern: (0,e.jsx)("tr",{children:(0,e.jsx)("td",{...})})
+        # Use brace-depth tracking for the "td" props to handle nested JSX correctly.
+        if not matched_any_row:
+            for tr_m in re.finditer(
+                rf'\(0,{_J}\.jsxs?\)\("tr",\{{',
+                tbody_text, re.DOTALL,
+            ):
+                # tr_m.end()-1 points to the '{' opening the tr props dict
+                tr_props_str = _extract_brace_content(tbody_text, tr_m.end() - 1)
+                if tr_props_str is None:
+                    continue
+                # Find the "td" call inside this tr's props
+                td_m = re.search(
+                    rf'\(0,{_J}\.jsx[s]?\)\("td",\{{',
+                    tr_props_str, re.DOTALL,
+                )
+                if not td_m:
+                    continue
+                td_props_str = _extract_brace_content(tr_props_str, td_m.end() - 1)
+                if td_props_str is None:
+                    continue
+                cell_text = _parse_table_cell(td_props_str)
+                rows.append([cell_text])
 
     if headers or rows:
         return ContentBlock(tag="table", headers=headers, children=rows)
@@ -973,6 +1211,15 @@ def _parse_single_element(element: str, img_vars: dict[str, str]) -> ContentBloc
         inner_text = _parse_jsxs_children(m.group(1))
         return ContentBlock(tag="p", text=f"**{inner_text}**")
 
+    # Paragraph containing a single code child (double-quoted):
+    # (0,J.jsx)(V.p,{children:(0,J.jsx)(V.code,{children:"..."})})
+    m = re.match(
+        rf'\(0,{_J}\.jsx\)\({_V}\.p,\{{children:\(0,{_J}\.jsx\)\({_V}\.code,\{{children:"((?:[^"\\]|\\.)*)"\}}\)\}}\)',
+        element,
+    )
+    if m:
+        return ContentBlock(tag="p", text=f"`{_unescape(m.group(1))}`")
+
     # Paragraph containing a single em child (double-quoted):
     # (0,J.jsx)(V.p,{children:(0,J.jsx)(V.em,{children:"..."})})
     m = re.match(
@@ -1001,6 +1248,16 @@ def _parse_single_element(element: str, img_vars: dict[str, str]) -> ContentBloc
     if m:
         text = m.group(1).encode().decode("unicode_escape", errors="replace")
         return ContentBlock(tag="p", text=f"_{text}_")
+
+    # Paragraph wrapping link with underline child:
+    # (0,J.jsx)(V.p,{children:(0,J.jsx)(V.a,{href:"...",children:(0,J.jsx)("u",{children:"..."})})})
+    m = re.match(
+        rf'\(0,{_J}\.jsx\)\({_V}\.p,\{{children:\(0,{_J}\.jsx\)\({_V}\.a,\{{href:"([^"]*)",children:\(0,{_J}\.jsx\)\("u",\{{children:"((?:[^"\\]|\\.)*)"\}}\)\}}\)\}}\)',
+        element,
+    )
+    if m:
+        href, text = m.group(1), _unescape(m.group(2))
+        return ContentBlock(tag="p", text=f"[{text}]({href})")
 
     # Compound paragraph: (0,J.jsxs)(V.p,{children:[...]})
     m = re.match(
@@ -1142,6 +1399,15 @@ def _parse_single_element(element: str, img_vars: dict[str, str]) -> ContentBloc
         if table_block:
             return table_block
 
+    # Bare raw-string table (no table-wrap div) — System Design Interview courses
+    # e.g. (0,e.jsxs)("table",{children:[(0,e.jsx)("thead",...),(0,e.jsxs)("tbody",...)]})
+    if re.match(r'\(0,\w+\.jsxs?\)\("table",\{', element) and (
+        '"thead"' in element or '"tbody"' in element
+    ):
+        table_block = _parse_raw_string_table(element)
+        if table_block:
+            return table_block
+
     # Unordered/ordered list: (0,J.jsxs)(V.ul,{children:[...]})
     # Also handles ol with start attribute: (0,J.jsxs)(V.ol,{start:"2",children:[...]})
     m = re.match(
@@ -1189,6 +1455,16 @@ def _parse_single_element(element: str, img_vars: dict[str, str]) -> ContentBloc
     if m:
         language = m.group(1) or ""
         text = m.group(2)
+        return ContentBlock(tag="pre", text=text, language=language)
+
+    # Simple code block (single-quoted children) — used when content has both " and `
+    m = re.search(
+        rf"{_V}\.pre,\{{children:.*?{_V}\.code,\{{(?:className:\"(?:hljs )?language-(\w+)\",)?children:'((?:[^'\\\\]|\\.)*)'",
+        element,
+    )
+    if m:
+        language = m.group(1) or ""
+        text = _unescape(m.group(2))
         return ContentBlock(tag="pre", text=text, language=language)
 
     # Blockquote (simple string)

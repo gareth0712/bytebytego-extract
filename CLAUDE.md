@@ -58,6 +58,8 @@ props.pageProps:
   .toc      → list of all chapters [{title, slug, chapter, free}, ...]
 ```
 
+Note: `parse_content()` only reads `.title`, `.chapter`, and `.code`. The `.toc` field is used by `extract_toc()` for batch mode. The `.free` and `.course` fields are metadata — useful for debugging but not parsed.
+
 ### Authentication
 
 Paywalled chapters return **empty `pageProps`** (`{}`) without authentication. The fetcher auto-loads cookies from a Netscape-format file. Resolution order:
@@ -106,10 +108,10 @@ Three types of string literals appear in the compiled MDX, all must be handled:
 - **Strong/Em/Code/Link**: `(0,J.jsx)(V.strong,{children:"text"})` inside children arrays
 - **Image**: `(0,J.jsx)(figureVar,{children:(0,J.jsx)(imgVar,{src:varName,alt:"..."})})` — image URLs stored in JS variables
 - **List**: `(0,J.jsxs)(V.ul,{children:[...V.li...]})` — items may have backtick separators inside
-- **Simple code block**: `V.pre,{children:...V.code,{className:"language-X",children:"plaintext"}}`
+- **Simple code block**: `V.pre,{children:...V.code,{className:"language-X",children:"plaintext"}}` — className is optional; children may be backtick template
 - **Highlighted code block** (ch3+): `V.pre > V.code{className:"hljs language-java",children:[span+literal mix]}` — see "hljs code extraction" below
 - **Table**: `"div"{className:"table-wrap"} > V.table > V.thead/V.tbody > V.tr > V.th/V.td`
-- **Info box**: `"div"{className:"info-box",children:[icon, V.p]}` — icon alt determines Tip/Note/Warning
+- **Info box**: `"div"{className:"info-box",children:[icon, V.p]}` — icon alt determines Tip/Note/Warning/Info
 - **Sample dialogue**: `"div"{className:"sample-dialogue",children:[V.p, br, V.p, ...]}` — speaker lines
 - **Blockquote** (simple): `(0,J.jsx)(V.blockquote,{children:"text"})`
 - **Blockquote** (compound): `(0,J.jsxs)(V.blockquote,{children:[...]})`
@@ -126,6 +128,11 @@ Three types of string literals appear in the compiled MDX, all must be handled:
 - **Footnotes**: `className:"footnotes",data-footnotes` — silently skipped
 - **Chapter number**: Injected by `parse_content()` — large green number before title
 - **Wrapper components**: Single-letter JSX wrappers unwrapped and children parsed inline
+- **Bare namespace-ref table**: `(0,J.jsxs)(V.table,{children:[...]})` — table without `table-wrap` div wrapper
+- **`mdx-table-wrap`/`code-table` variants**: Additional className values for table-wrap divs
+- **`class` attribute note-block**: `"div"{class:"note-block"}` — Mobile System Design variant using `class` instead of `className`
+- **Bare span wrapper**: `(0,J.jsx)("span",{children:...})` — unwrapped, children parsed inline
+- **Info admonition**: Icon `alt:"Info"` accepted as fourth admonition type alongside Tip/Note/Warning
 
 ### hljs code extraction
 
@@ -164,7 +171,7 @@ class ContentBlock:
     level: int          # heading level 1-6
     src: str            # absolute image URL
     alt: str            # image alt text
-    children: list      # list items, dialogue lines, or table rows (list[list[str]])
+    children: list      # list items (list[str]), dialogue lines (list[str]), or table rows (list[list[str]])
     language: str       # code block language
     admonition_type: str  # "Tip", "Note", "Warning" for info-box
     headers: list       # table header cells
@@ -186,6 +193,7 @@ class ContentBlock:
 - **Image alt text**: ByteByteGo generates very long AI-written alt text. Could truncate.
 - **beautifulsoup4**: Only used for legacy `_table_html_to_md` fallback. Could be removed.
 - **No test suite**: Verification is manual. Use `--dump-json` to save fixtures and compare output.
+- **Silent image failures**: Failed image fetches (network errors, invalid SVG) are logged as warnings and skipped in the PDF. No placeholder is inserted.
 
 ## Test Fixtures (`responses/`)
 
@@ -508,6 +516,8 @@ Key functions:
 - `extract_toc(html)` — extracts `pageProps.toc` from fetched HTML
 - `build_chapter_url(base, toc_entry)` — handles both string and list slugs
 - `derive_course_base_url(url)` — strips chapter path to get course base
+
+Note: `extract_all()` does not accept a `cookies` parameter directly. It relies on the module-level `fetcher.COOKIE_PATH` being set by `main()` before invocation.
 
 ### Known Source Data Issues (NOT parser bugs)
 

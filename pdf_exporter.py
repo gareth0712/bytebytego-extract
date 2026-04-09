@@ -197,6 +197,63 @@ def _build_styles() -> dict[str, ParagraphStyle]:
     return styles
 
 
+def _fix_tag_nesting(text: str) -> str:
+    """Fix improperly nested <b> and <i> tags for ReportLab.
+
+    ReportLab requires strictly nested XML tags. Source content may produce
+    crossed tags like <b><i>text</b> more</i> due to markdown patterns such as
+    ***bold** italic* where closing order doesn't match opening order.
+
+    Strategy: whenever a closing tag is encountered out of order (e.g. </b>
+    while <i> is on top of the stack), close all intervening open tags first,
+    then reopen them after, so the structure is always properly nested.
+    """
+    # Only fix <b> and <i> — other tags are generated correctly.
+    tag_re = re.compile(r'(</?(?:b|i)>)')
+    parts = tag_re.split(text)
+    stack: list[str] = []
+    out: list[str] = []
+
+    for part in parts:
+        if not part:
+            continue
+        m = re.fullmatch(r'<(/?)(b|i)>', part)
+        if not m:
+            out.append(part)
+            continue
+        closing, tag = m.group(1) == '/', m.group(2)
+        if not closing:
+            stack.append(tag)
+            out.append(part)
+        else:
+            if tag in stack:
+                if stack[-1] == tag:
+                    # Properly nested — just close it.
+                    stack.pop()
+                    out.append(part)
+                else:
+                    # Out-of-order close: close intervening tags, close this
+                    # one, then reopen the intervening tags.
+                    idx = len(stack) - 1 - stack[::-1].index(tag)
+                    intervening = stack[idx + 1:]
+                    # Close intervening in reverse order.
+                    for t in reversed(intervening):
+                        out.append(f'</{t}>')
+                    # Close the target tag.
+                    out.append(f'</{tag}>')
+                    del stack[idx]
+                    # Reopen intervening tags.
+                    for t in intervening:
+                        out.append(f'<{t}>')
+            # If tag not in stack at all, discard the stray closing tag.
+
+    # Close any tags still open (shouldn't happen with well-formed markdown).
+    for t in reversed(stack):
+        out.append(f'</{t}>')
+
+    return ''.join(out)
+
+
 def _escape_xml(text: str) -> str:
     """Escape text for ReportLab XML paragraphs."""
     # Preserve markdown-style bold/italic by converting to ReportLab tags
@@ -213,6 +270,9 @@ def _escape_xml(text: str) -> str:
     text = re.sub(r'`(.+?)`', r'<font name="Courier" color="#c0392b">\1</font>', text)
     # Convert markdown links [text](url) — just show the text in PDF
     text = re.sub(r'\[(.+?)\]\(.+?\)', r'<u>\1</u>', text)
+
+    # Fix any improperly nested <b>/<i> tags produced by mismatched markdown.
+    text = _fix_tag_nesting(text)
 
     return text
 
@@ -453,7 +513,7 @@ def _fetch_image(url: str):
     Returns an Image or Drawing flowable, or None on failure.
 
     Image width is scaled proportionally: the native pixel width is compared
-    to the website's content column width (~700 px) to derive a fraction, and
+    to the website's content column width (~940 px) to derive a fraction, and
     that fraction is applied to the PDF content width.  This means a 624 px
     image (89% of column) appears near full-width while a 326 px image (47%)
     appears at roughly half width — matching the original web proportions.

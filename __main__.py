@@ -112,8 +112,11 @@ def extract_all(
         sys.exit(1)
 
     base_url = derive_course_base_url(seed_url)
+    course_slug = base_url.rstrip("/").split("/")[-1]
+    output_dir = output_dir / course_slug
     total = len(toc)
     print(f"Found {total} chapters in TOC. Base URL: {base_url}")
+    print(f"Output directory: {output_dir}")
     print("-" * 60)
 
     results: list[dict] = []
