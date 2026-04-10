@@ -1,0 +1,24 @@
+Fetching seed page to discover TOC: https://bytebytego.com/courses/system-design-interview/scale-from-zero-to-millions-of-users
+Found 31 chapters in TOC. Base URL: https://bytebytego.com/courses/system-design-interview
+Output directory: output\system-design-interview
+------------------------------------------------------------
+
+[1/31] Extracting: Foreword
+  URL: https://bytebytego.com/courses/system-design-interview/foreword
+Fetching: https://bytebytego.com/courses/system-design-interview/foreword
+  JSON saved: output\system-design-interview\foreword.json
+Parsing content...
+  Title: Foreword
+  Chapter: 0
+  Content blocks: 6
+Saving Markdown...
+  -> output\system-design-interview\00. Foreword.md
+Generating PDF...
+  -> output\system-design-interview\00. Foreword.pdf
+Done!
+
+[2/31] Extracting: Join the Community
+  URL: https://bytebytego.com/courses/system-design-interview/join-discord-community
+Fetching: https://bytebytego.com/courses/system-design-interview/join-discord-community
+  JSON saved: output\system-design-interview\join-discord-community.json
+Parsing content...
