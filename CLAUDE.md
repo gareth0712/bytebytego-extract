@@ -187,6 +187,46 @@ class ContentBlock:
 | `--dump-json`        | Also save raw `pageProps` JSON alongside MD/PDF     |
 | `--all`              | Extract ALL chapters of the course via TOC             |
 
+## Course Image Localization
+
+Images are downloaded to per-chapter subfolders after parsing, and MD/PDF references are rewritten to local paths. CDN URLs no longer appear in output files.
+
+### Pipeline position
+
+`parse_content()` → **`localize_images()`** → `save_markdown()` / `save_pdf()`
+
+### Directory layout
+
+```
+output/object-oriented-design-interview/
+  01. What is an Object-Oriented Design Interview.md
+  01. What is an Object-Oriented Design Interview.pdf
+  01. What is an Object-Oriented Design Interview_images/
+    image-1-1-AFIBSFEU.svg
+    image-1-2-4XTE4MPH.svg
+```
+
+### Files involved
+
+| File | Role |
+| ---- | ---- |
+| `image_localizer.py` (NEW) | `localize_images(blocks, images_dir, session)` — downloads each `img` block's `src`, rewrites `block.src` to a relative path like `{chapter}_images/filename.ext`. Returns a new block list (immutable). |
+| `__main__.py` | Calls `localize_images()` after `parse_content()`; passes `output_dir / f"{chapter_stem}_images"` as `images_dir`. |
+| `pdf_exporter.py` | `_fetch_image(src, base_dir=None)` detects local paths (no `http://` prefix) and reads from disk via `base_dir`. `content_to_flowables` and `save_pdf` gained the optional `base_dir` param. |
+| `markdown_converter.py` | Unchanged. Already emits `![{alt}]({block.src})`; local paths resolve automatically since `src` is mutated upstream. |
+
+### Behavior details
+
+- **Filename derivation**: taken from URL tail, sanitized for Windows (strip query params, replace `' + ? # < > | : * "`).
+- **Relative path format**: forward-slash (`{chapter}_images/filename`) for cross-platform MD renderer compatibility.
+- **Download fallback**: on 404 or network error, `block.src` is left as the original CDN URL and a warning is logged. PDF exporter's HTTP-fetch branch handles it transparently.
+- **Cache**: if the destination file already exists, the download is skipped. Second runs log `[cache]` lines.
+- **Guides regression safety**: the guides call path always has `https://`-prefixed `src` values, so the local-path branch in `_fetch_image` is never triggered there.
+
+### Debugging
+
+If a chapter's PDF shows no images but the MD references look correct, verify that the `_images/` subfolder was created and that `localize_images` was not bypassed (check `__main__.py` call site).
+
 ## Known Limitations
 
 - **Token expiry**: Firebase JWT expires hourly. Re-export cookies from browser when paid chapters fail.
@@ -529,3 +569,114 @@ Note: `extract_all()` does not accept a `cookies` parameter directly. It relies 
 - **Empty `h3` in OOD Ch13**: `(0,e.jsx)(t.h3,{id:""})` — cosmetic only, no content loss
 - **beautifulsoup4**: Only used for legacy fallback. Could be removed.
 - **No test suite**: Verification is manual. Use `--dump-json` to save fixtures and compare output.
+
+---
+
+## Engineering Visual Guides (New)
+
+A second extraction capability added alongside the course extractor. Targets ByteByteGo's public **Engineering Visual Guides** (https://bytebytego.com/guides), which are sourced from the public GitHub repo [`ByteByteGoHq/system-design-101`](https://github.com/ByteByteGoHq/system-design-101). **No cookies or auth required.** The `fetcher.COOKIE_PATH` module variable is never read in the guides code path.
+
+### New Files
+
+```
+guides_fetcher.py    # GitHub tree API enumeration, raw markdown fetch, YAML frontmatter
+                     # parser, image downloader (~168 LOC)
+guides_converter.py  # CommonMark-subset parser: converts markdown → ContentBlock list
+                     # Reuses the ContentBlock dataclass from fetcher.py (~233 LOC)
+guides_main.py       # Orchestration: per-guide, per-category, all-categories extraction
+                     # with argparse CLI. Also strips leading H1 block before PDF export
+                     # to avoid double-rendering (~360 LOC)
+run.py               # Interactive wrapper: prompts "courses or guides?", then delegates
+                     # to __main__.main() or guides_main.main() (~100 LOC)
+```
+
+### Data Flow
+
+```
+GitHub tree API (recursive)
+  → filter paths matching data/guides/{slug}.md
+    → fetch raw markdown via raw.githubusercontent.com
+      → parse YAML frontmatter (title, categories, draft)
+        → skip if draft: true
+          → guides_converter.md_to_blocks() → list[ContentBlock]
+            → markdown_converter.blocks_to_markdown() → .md file
+            → pdf_exporter.content_to_flowables()    → .pdf file
+              (H1 title block stripped first to avoid double-rendering
+               since content_to_flowables renders page.title separately)
+```
+
+API endpoints used:
+
+- **Enumeration**: `https://api.github.com/repos/ByteByteGoHq/system-design-101/git/trees/main?recursive=1`
+- **Content**: `https://raw.githubusercontent.com/ByteByteGoHq/system-design-101/main/data/guides/{slug}.md`
+- **Images**: downloaded from `https://assets.bytebytego.com/diagrams/` CDN to a local `images/` subfolder per category
+
+### Output Layout
+
+```
+output/engineering-visual-guides/
+  {category-slug}/
+    images/                     # locally downloaded diagram images
+    {guide-slug}.md             # image src paths are relative (./images/foo.png)
+    {guide-slug}.pdf
+  _multi-category.log           # records guides duplicated into multiple categories
+```
+
+### CLI Usage
+
+```bash
+# Interactive wrapper (recommended for one-off use — prompts for mode and options)
+python run.py
+
+# Single category (bypasses interactive prompt)
+python guides_main.py --category api-web-development --output-dir output/engineering-visual-guides
+
+# All categories, all non-draft guides
+python guides_main.py --all --output-dir output/engineering-visual-guides
+```
+
+Use `guides_main.py` directly in automated/agent workflows. Use `run.py` interactively when switching between course and guide extraction in the same session.
+
+### Available Category Slugs (15)
+
+```
+ai-machine-learning
+api-web-development
+caching-performance
+cloud-distributed-systems
+computer-fundamentals
+database-and-storage
+devops-cicd
+devtools-productivity
+how-it-works
+payment-and-fintech
+real-world-case-studies
+security
+software-architecture
+software-development
+technical-interviews
+```
+
+### Multi-Category Guides
+
+Guides whose YAML frontmatter `categories` field lists more than one value are duplicated into every listed category folder. The `_multi-category.log` file at the output root records each such guide with the list of categories it was written to. The log is **reset (deleted and recreated) at the start of each batch run** — both `extract_category()` and `extract_all_categories()` call `unlink(missing_ok=True)` on the log path before writing.
+
+### Draft Guides
+
+If a guide's frontmatter contains `draft: true`, it is silently skipped. This matches the live site, which does not display draft entries.
+
+### PDF Title Dedup Fix
+
+`guides_main.py` strips the leading H1 title block from the `ContentBlock` list **before** passing it to `pdf_exporter.content_to_flowables()`. This prevents the guide title from appearing twice in the PDF (once from `page.title` rendered by the exporter, and once from the H1 block parsed out of the markdown). If the title appears doubled in a future guide's PDF, check whether the H1 strip logic in `guides_main.py` is still correctly identifying and removing the first `tag == "heading"` block with `level == 1`.
+
+### Slug Sanitization
+
+Some guide slugs in the GitHub tree contain characters that are invalid on Windows filesystems (apostrophes `'`, plus signs `+`). `guides_main.py` sanitizes slugs before constructing output paths.
+
+### Reuse of Existing Exporters
+
+`guides_converter.py` produces `ContentBlock` objects using the same dataclass defined in `fetcher.py`. This means `pdf_exporter.content_to_flowables()` and `markdown_converter.blocks_to_markdown()` work without modification — no separate PDF or Markdown engine is needed for guides.
+
+### Current Progress (2026-04-10)
+
+In progress — see `output/engineering-visual-guides/` for current state. The `_multi-category.log` file in that directory lists any guides that have been duplicated across categories so far.

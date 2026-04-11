@@ -91,6 +91,45 @@ Reference.md           # Detailed MDX internals and raw JSX samples
 | Dialogue sections | `> **Speaker:** text` | Purple bordered box |
 | Blockquotes | `> text` | Italic, blue border |
 
+## Engineering Visual Guides
+
+In addition to course extraction, this tool can also extract ByteByteGo's free **Engineering Visual Guides** (https://bytebytego.com/guides) — publicly available system design diagrams sourced directly from the [`ByteByteGoHq/system-design-101`](https://github.com/ByteByteGoHq/system-design-101) GitHub repository. **No cookies or authentication required.**
+
+### CLI Usage
+
+```bash
+# Interactive wrapper — prompts for courses or guides, then options
+python run.py
+
+# Extract a single category of guides
+python guides_main.py --category api-web-development --output-dir output/engineering-visual-guides
+
+# Extract all categories (all non-draft guides)
+python guides_main.py --all --output-dir output/engineering-visual-guides
+```
+
+### Output Layout
+
+```
+output/engineering-visual-guides/
+  {category-slug}/
+    images/                         # locally downloaded CDN images
+    {guide-slug}.md
+    {guide-slug}.pdf
+  _multi-category.log               # guides duplicated into multiple category folders
+```
+
+### Available Categories (15)
+
+`ai-machine-learning`, `api-web-development`, `caching-performance`, `cloud-distributed-systems`, `computer-fundamentals`, `database-and-storage`, `devops-cicd`, `devtools-productivity`, `how-it-works`, `payment-and-fintech`, `real-world-case-studies`, `security`, `software-architecture`, `software-development`, `technical-interviews`
+
+### Notes
+
+- Guide images are downloaded locally from `assets.bytebytego.com/diagrams/` and referenced as relative paths in the generated `.md` files.
+- Guides whose frontmatter lists multiple categories are duplicated into each relevant category folder; the `_multi-category.log` file records which guides were duplicated.
+- Guides marked `draft: true` in frontmatter are skipped.
+- The existing `pdf_exporter.py` and `markdown_converter.py` are reused — no separate PDF engine needed.
+
 ## Dependencies
 
 - `requests` — HTTP fetching
