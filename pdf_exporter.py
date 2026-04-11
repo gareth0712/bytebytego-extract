@@ -506,11 +506,18 @@ def _proportional_pdf_width(native_px: float) -> float:
     return min(target, _CONTENT_WIDTH * 0.95)
 
 
-def _fetch_image(url: str):
-    """Download an image and return a ReportLab flowable.
+def _fetch_image(src: str, base_dir: Path | None = None):
+    """Load an image and return a ReportLab flowable.
 
     Handles both raster images (PNG/JPG) and SVG images.
     Returns an Image or Drawing flowable, or None on failure.
+
+    ``src`` may be:
+    - An absolute URL (``https://...``) — fetched via HTTP.
+    - A relative or absolute local filesystem path — loaded from disk.
+      When ``src`` is a relative path, it is resolved against ``base_dir``
+      (the output directory passed by ``save_pdf``).  If ``base_dir`` is
+      None the current working directory is used.
 
     Image width is scaled proportionally: the native pixel width is compared
     to the website's content column width (~940 px) to derive a fraction, and
@@ -523,23 +530,39 @@ def _fetch_image(url: str):
     # Hard cap on height to prevent a single image from dominating a page.
     max_height = min(A4[1] - 80 * mm, A4[1] * 0.50)
 
+    is_svg: bool
+    img_bytes: bytes
+
     try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36"
-            )
-        }
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
+        if src.startswith("http://") or src.startswith("https://"):
+            # --- Remote URL: fetch via HTTP (original behaviour) ---
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36"
+                )
+            }
+            resp = requests.get(src, headers=headers, timeout=15)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            is_svg = "svg" in content_type or src.endswith(".svg")
+            img_bytes = resp.content
+        else:
+            # --- Local file: resolve against base_dir and read from disk ---
+            local_path = Path(src)
+            if not local_path.is_absolute():
+                local_path = (base_dir or Path.cwd()) / local_path
+            if not local_path.exists():
+                print(f"  Warning: local image not found: {local_path}")
+                return None
+            is_svg = local_path.suffix.lower() == ".svg"
+            img_bytes = local_path.read_bytes()
 
-        content_type = resp.headers.get("content-type", "")
-
-        if "svg" in content_type or url.endswith(".svg"):
+        if is_svg:
             # Convert SVG to a ReportLab Drawing using svglib
             from svglib.svglib import svg2rlg
 
-            svg_data = io.BytesIO(resp.content)
+            svg_data = io.BytesIO(img_bytes)
             drawing = svg2rlg(svg_data)
             if drawing is None:
                 return None
@@ -558,7 +581,7 @@ def _fetch_image(url: str):
             return drawing
 
         # Raster image
-        img_data = io.BytesIO(resp.content)
+        img_data = io.BytesIO(img_bytes)
         img = Image(img_data)
 
         orig_w, orig_h = img.imageWidth, img.imageHeight
@@ -572,7 +595,7 @@ def _fetch_image(url: str):
         img.hAlign = "CENTER"
         return img
     except Exception as exc:
-        print(f"  Warning: could not load image {url}: {exc}")
+        print(f"  Warning: could not load image {src}: {exc}")
         return None
 
 
@@ -587,9 +610,19 @@ def _add_footer(canvas, doc):
 
 
 def content_to_flowables(
-    page: PageContent, styles: dict[str, ParagraphStyle]
+    page: PageContent,
+    styles: dict[str, ParagraphStyle],
+    base_dir: Path | None = None,
 ) -> list:
-    """Convert PageContent blocks into ReportLab flowables."""
+    """Convert PageContent blocks into ReportLab flowables.
+
+    Args:
+        page: Parsed page content.
+        styles: ReportLab paragraph style mapping from ``_build_styles()``.
+        base_dir: Optional base directory used to resolve relative local image
+                  paths stored in img blocks (set by ``save_pdf``).  Pass
+                  ``None`` when blocks contain absolute HTTP URLs (guides path).
+    """
     story = []
 
     # If the first block is a chapter-number, render it before the title so the
@@ -626,7 +659,7 @@ def content_to_flowables(
                 story.append(Paragraph(text, styles["body"]))
 
         elif block.tag == "img":
-            img = _fetch_image(block.src)
+            img = _fetch_image(block.src, base_dir=base_dir)
             if img is not None:
                 story.append(Spacer(1, 6))
                 story.append(img)
@@ -786,7 +819,7 @@ def save_pdf(page: PageContent, output_dir: str | Path) -> Path:
     )
 
     styles = _build_styles()
-    story = content_to_flowables(page, styles)
+    story = content_to_flowables(page, styles, base_dir=output_dir)
 
     doc.build(story, onFirstPage=_add_footer, onLaterPages=_add_footer)
     return filepath

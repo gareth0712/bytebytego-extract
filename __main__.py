@@ -26,7 +26,8 @@ from fetcher import (
     build_chapter_url,
     derive_course_base_url,
 )
-from markdown_converter import save_markdown
+from image_localizer import localize_images
+from markdown_converter import generate_filename, save_markdown
 from pdf_exporter import save_pdf
 
 
@@ -69,6 +70,15 @@ def extract(
     print(f"  Title: {page.title}")
     print(f"  Chapter: {page.chapter_number}")
     print(f"  Content blocks: {len(page.blocks)}")
+
+    # Derive the images directory from the chapter filename stem.
+    # e.g. "01. What is an Object-Oriented Design Interview.md"
+    #   -> "01. What is an Object-Oriented Design Interview_images/"
+    md_stem = generate_filename(page)[: -len(".md")]  # strip ".md"
+    images_dir = output_dir / f"{md_stem}_images"
+
+    print("Downloading images...")
+    page.blocks = localize_images(page.blocks, images_dir)
 
     print("Saving Markdown...")
     md_path = save_markdown(page, output_dir)
